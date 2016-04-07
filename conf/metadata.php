@@ -7,7 +7,7 @@ $meta['logourl'] = array('string');
 $meta['server'] = array('string');
 $meta['rootcas'] = array('string');
 $meta['port'] = array('string');
-
+$meta['samlValidate'] = array('onoff');
 
 $meta['handlelogoutrequest'] = array('onoff');
 $meta['handlelogoutrequestTrustedHosts'] = array('string');
