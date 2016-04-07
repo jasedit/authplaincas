@@ -73,7 +73,7 @@ class auth_plugin_authplaincas extends DokuWiki_Auth_Plugin {
       $this->cando['getUsers']     = true;
       $this->cando['getUserCount'] = true;
 
-      $this->cando['external'] = (preg_match("#(bot)|(slurp)|(netvibes)#i", $_SERVER['HTTP_USER_AGENT'])) ? false : true;
+      $this->cando['external'] = true;//(preg_match("#(bot)|(slurp)|(netvibes)#i", $_SERVER['HTTP_USER_AGENT'])) ? false : true;
       //Disable CAS redirection for bots/crawlers/readers
       $this->cando['login'] = true;
       $this->cando['logout'] = true;
