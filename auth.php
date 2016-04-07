@@ -67,9 +67,9 @@ class auth_plugin_authplaincas extends DokuWiki_Auth_Plugin {
       $this->cando['delUser']      = true;
       $this->cando['modLogin']     = false; //keep this false as CAS name is constant
       $this->cando['modPass']      = false;
-      $this->cando['modName']      = false;
-      $this->cando['modMail']      = false;
-      $this->cando['modGroups']    = false;
+      $this->cando['modName']      = true;
+      $this->cando['modMail']      = true;
+      $this->cando['modGroups']    = true;
       $this->cando['getUsers']     = true;
       $this->cando['getUserCount'] = true;
 
@@ -272,26 +272,6 @@ function trustExternal ($user,$pass,$sticky=false)
       // User exists, check for updates
       } else {
         $this->_userInfo['uid'] = $remoteUser;
-        $this->_assembleGroups($remoteUser);
-
-        $attributes = plaincas_user_attributes(phpCAS::getAttributes());
-
-        if ($this->_userInfo['grps'] != $this->_userInfo['tmp_grps'] ||
-            $attributes['name'] !== $this->_userInfo['name'] ||
-            $attributes['mail'] !== $this->_userInfo['mail']
-            ) {
-          //msg("new roles, email, or name");
-          $this->deleteUsers(array($remoteUser));
-          $this->_userInfo = array(              
-            'uid' => $remoteUser, 
-            'name' => $attributes['name'], 
-            'mail' => $attributes['mail']
-          );
-          $this->_assembleGroups($remoteUser);
-          $this->_saveUserGroup();
-          $this->_saveUserInfo();
-        }
-
         $USERINFO = $this->_userInfo;
         $_SESSION[DOKU_COOKIE]['auth']['user'] = $USERINFO['uid'];
         $_SESSION[DOKU_COOKIE]['auth']['info'] = $USERINFO;
