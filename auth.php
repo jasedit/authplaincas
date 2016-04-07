@@ -128,7 +128,7 @@ class auth_plugin_authplaincas extends DokuWiki_Auth_Plugin {
       if($this->_getOption("logFile")){ phpCAS::setDebug($this->_getOption("logFile"));} 
       //If $conf['auth']['cas']['logFile'] exist we start phpCAS in debug mode
 
-      $server_version  = CAS_VERSION_2_0;
+      $server_version  = SAML_VERSION_1_1;
       if($this->_getOption("samlValidate")) {
           $server_version = SAML_VERSION_1_1;
       }
