@@ -10,7 +10,22 @@
 // must be run within Dokuwiki
 if(!defined('DOKU_INC')) die();
 
-require_once(DOKU_PLUGIN.'authplaincas/phpCAS/CAS.php');
+// Look for the phpCAS library in different places.
+if (!class_exists('phpCAS')) {
+  $phpcas_paths = [
+    DOKU_INC . 'vendor/jasig/phpcas/CAS.php',
+    DOKU_INC . 'phpCAS/CAS.php',
+    DOKU_PLUGIN . 'phpCAS/CAS.php',
+    DOKU_PLUGIN . 'authplaincas/phpCAS/CAS.php',
+  ];
+  foreach ($phpcas_paths as $file) {
+    if (file_exists($file)) {
+      require_once $file;
+      continue;
+    }
+  }
+}
+
 
 class auth_plugin_authplaincas extends DokuWiki_Auth_Plugin {
   /** @var array user cache */
@@ -37,7 +52,20 @@ class auth_plugin_authplaincas extends DokuWiki_Auth_Plugin {
     parent::__construct();
     global $config_cascade;
     global $conf;
-    
+
+    // Show an error message instead of a php error when third party conditions
+    // are not met.
+    if (!class_exists('phpCAS')) {
+      msg("CAS err: phpCAS class not found.",-1);
+      $this->success = false;
+      return;
+    }
+    if(!function_exists('curl_init')) {
+      msg("CAS err: CURL php extension not found.",-1);
+      $this->success = false;
+      return;
+    }
+
     // allow the preloading to configure other user files
     if( isset($config_cascade['plaincasauth.users']) && isset($config_cascade['plaincasauth.users']['default']) ) {
       $this->casuserfile = $config_cascade['plaincasauth.users']['default'];
@@ -73,8 +101,7 @@ class auth_plugin_authplaincas extends DokuWiki_Auth_Plugin {
       $this->cando['getUsers']     = true;
       $this->cando['getUserCount'] = true;
 
-      $this->cando['external'] = true;//(preg_match("#(bot)|(slurp)|(netvibes)#i", $_SERVER['HTTP_USER_AGENT'])) ? false : true;
-      //Disable CAS redirection for bots/crawlers/readers
+      $this->cando['external'] = true;
       $this->cando['login'] = true;
       $this->cando['logout'] = true;
       $this->cando['logoff'] = true;
@@ -107,18 +134,30 @@ class auth_plugin_authplaincas extends DokuWiki_Auth_Plugin {
       $this->_options['rootcas'] = $this->getConf('rootcas');
       $this->_options['port'] = $this->getConf('port');
       $this->_options['samlValidate'] = $this->getConf('samlValidate');
-      $this->_options['autologin'] = $this->getConf('autologinout'); // $this->getConf('autologin');
-      $this->_options['caslogout'] = $this->getConf('autologinout'); // $this->getConf('caslogout');
       $this->_options['handlelogoutrequest'] = $this->getConf('handlelogoutrequest');
       $this->_options['handlelogoutrequestTrustedHosts'] = $this->getConf('handlelogoutrequestTrustedHosts');
       $this->_options['minimalgroups'] = $this->getConf('minimalgroups');
       $this->_options['localusers'] = $this->getConf('localusers');
       // $this->_options['defaultgroup'] = $this->getConf('defaultgroup');
       // $this->_options['superuser'] = $this->getConf('superuser');
-      
+
+      // Configure support for autologin (gateway mode) and redirecting on logout for CAS server single-logout
+      if (preg_match("#(bot)|(slurp)|(netvibes)#i", $_SERVER['HTTP_USER_AGENT'])) {
+        // bots (like search engine indexers) should never be given 302 redirects
+        $this->_options['autologin'] = false;
+        $this->_options['caslogout'] = false;
+      } elseif ($this->getConf('autologinout') == true) {
+        // the "autologinout" configuration parameter enables both gateway mode and external CAS server logout
+        $this->_options['autologin'] = true;
+        $this->_options['caslogout'] = true;
+      } else {
+        // otherwise, fall back to the individual configuration parameters "autologin" and "caslogout"
+        $this->_options['autologin'] = $this->getConf('autologin');
+        $this->_options['caslogout'] = $this->getConf('caslogout');
+      }
+
       // no local users at the moment
       $this->_options['localusers'] = false;
-      
       
       if($this->_options['localusers'] && !@is_readable($this->localuserfile)) {
         msg("plainCAS: The local users file is not readable.", -1);
@@ -135,20 +174,16 @@ class auth_plugin_authplaincas extends DokuWiki_Auth_Plugin {
       phpCAS::client($server_version, $this->_getOption('server'), (int) $this->_getOption('port'), $this->_getOption('rootcas'));
       //Note the last argument true, to allow phpCAS to change the session_id so he will be able to destroy the session after a CAS logout request - Enable Single Sign Out
 
-      // curl extension is needed
-      if(!function_exists('curl_init')) {
-        if ($this->_getOption('debug')) {
-          msg("CAS err: CURL extension not found.",-1,__LINE__,__FILE__);
-        }
-        $this->success = false;
-        return;
-      }
-      // automatically log the user when there is a cas session opened
-      if($this->_getOption('autologin')) {
-        phpCAS::setCacheTimesForAuthRecheck(1);
-      }
-      else {
+      // when using autologin (gateway mode), how often will autologin be attempted
+      if ($this->getConf('autologinonce', false)) {
+        // cache a failed autologin attempt "forever" until the current
+        // anonymous session expires or the user clicks the login button
         phpCAS::setCacheTimesForAuthRecheck(-1);
+      } else {
+        // retry autologin every pageview, but cache a failed gateway attempt 1
+        // time, to avoid a second gateway attempt on the indexer.php page
+        // asset on the same pageview
+        phpCAS::setCacheTimesForAuthRecheck(1);
       }
 
       if($this->_getOption('cert')) {
@@ -242,7 +277,7 @@ function trustExternal ($user,$pass,$sticky=false)
     global $USERINFO;
     $sticky ? $sticky = true : $sticky = false; //sanity check
     
-    if ((phpCAS::isAuthenticated() || $this->_getOption('autologin') ) && phpCAS::checkAuthentication()) {
+    if (phpCAS::isAuthenticated() || ( $this->_getOption('autologin') && phpCAS::checkAuthentication() )) {
 
       $remoteUser = phpCAS::getUser();
       $this->_userInfo = $this->getUserData($remoteUser);
@@ -514,7 +549,7 @@ function trustExternal ($user,$pass,$sticky=false)
    *
    * @author  Andreas Gohr <andi@splitbrain.org>
    */
-  function getUserData($user){
+  function getUserData($user, $requireGroups=true) {
     if($this->users === null) $this->_loadUserData();
     return isset($this->users[$user]) ? $this->users[$user] : false;
   }
